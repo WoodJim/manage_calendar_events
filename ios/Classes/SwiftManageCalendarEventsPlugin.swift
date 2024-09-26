@@ -456,9 +456,9 @@ public class SwiftManageCalendarEventsPlugin: NSObject, FlutterPlugin {
         guard let emailAddress = attendeesMap["emailAddress"] as? String else { return }
 
         var attendees = ekEvent.attendees ?? []
-        guard let foundIndex = attendees.firstIndex { element in
+        guard let foundIndex = attendees.firstIndex(where: { element in
             return element.emailAddress == emailAddress
-        } else {
+        }) else {
             return
         }
         attendees.remove(at: foundIndex)
@@ -503,11 +503,11 @@ public class SwiftManageCalendarEventsPlugin: NSObject, FlutterPlugin {
         if(!hasPermissions()) {
             requestPermissions()
         }
-        guard let ekEvent = self.eventStore.event(withIdentifier: eventId) else { return }
+        guard let ekEvent = self.eventStore.event(withIdentifier: eventId) else { return false }
         if(!ekEvent.hasAlarms) {
             return false
         }
-        ekEvent.removeAlarm(ekEvent!.alarms![0])
+        ekEvent.removeAlarm(ekEvent.alarms![0])
 
         do {
             try self.eventStore.save(ekEvent, span: .futureEvents)
