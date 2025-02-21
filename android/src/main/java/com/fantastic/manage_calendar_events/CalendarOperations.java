@@ -163,17 +163,36 @@ public class CalendarOperations {
 
         try {
             while (cur.moveToNext()) {
-                String eventId = cur.getLong(cur.getColumnIndex(Events._ID)) + "";
-                String title = cur.getString(cur.getColumnIndex(Events.TITLE));
-                String desc = cur.getString(cur.getColumnIndex(Events.DESCRIPTION));
-                String location = cur.getString(cur.getColumnIndex(Events.EVENT_LOCATION));
-                String url = cur.getString(cur.getColumnIndex(Events.CUSTOM_APP_URI));
-                long startDate = cur.getLong(cur.getColumnIndex(Events.DTSTART));
-                long endDate = cur.getLong(cur.getColumnIndex(Events.DTEND));
-                String rRule = cur.getString(cur.getColumnIndex(Events.RRULE)); // 获取重复规则
-                long duration = cur.getLong(cur.getColumnIndex(Events.DURATION));
-                boolean isAllDay = cur.getInt(cur.getColumnIndex(Events.ALL_DAY)) > 0;
-                boolean hasAlarm = cur.getInt(cur.getColumnIndex(Events.HAS_ALARM)) > 0;
+                // 确保列名正确
+                int eventIdIndex = cur.getColumnIndex(Events._ID);
+                int titleIndex = cur.getColumnIndex(Events.TITLE);
+                int descIndex = cur.getColumnIndex(Events.DESCRIPTION);
+                int locationIndex = cur.getColumnIndex(Events.EVENT_LOCATION);
+                int urlIndex = cur.getColumnIndex(Events.CUSTOM_APP_URI);
+                int startDateIndex = cur.getColumnIndex(Events.DTSTART);
+                int endDateIndex = cur.getColumnIndex(Events.DTEND);
+                int rRuleIndex = cur.getColumnIndex(Events.RRULE);
+                int durationIndex = cur.getColumnIndex(Events.DURATION);
+                int allDayIndex = cur.getColumnIndex(Events.ALL_DAY);
+                int hasAlarmIndex = cur.getColumnIndex(Events.HAS_ALARM);
+
+                // 检查列是否存在
+                if (eventIdIndex == -1 || titleIndex == -1 || startDateIndex == -1 || endDateIndex == -1) {
+                    Log.e("CursorError", "Required columns not found");
+                    continue;
+                }
+
+                String eventId = cur.getString(eventIdIndex);
+                String title = cur.getString(titleIndex);
+                String desc = descIndex != -1 ? cur.getString(descIndex) : null;
+                String location = locationIndex != -1 ? cur.getString(locationIndex) : null;
+                String url = urlIndex != -1 ? cur.getString(urlIndex) : null;
+                long startDate = cur.getLong(startDateIndex);
+                long endDate = cur.getLong(endDateIndex);
+                String rRule = rRuleIndex != -1 ? cur.getString(rRuleIndex) : null;
+                long duration = durationIndex != -1 ? cur.getLong(durationIndex) : 0;
+                boolean isAllDay = allDayIndex != -1 && cur.getInt(allDayIndex) > 0;
+                boolean hasAlarm = hasAlarmIndex != -1 && cur.getInt(hasAlarmIndex) > 0;
 
                 // 如果是周期性事件，动态计算实例
                 if (rRule != null && !rRule.isEmpty()) {
