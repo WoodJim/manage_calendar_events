@@ -128,12 +128,14 @@ public class CalendarOperations {
         return getEvents(selection);
     }
 
-    public ArrayList<CalendarEvent> getEventsByDateRange(String calendarId, long startDate,
-                                                         long endDate) {
+    public ArrayList<CalendarEvent> getEventsByDateRange(String calendarId, long startDate, long endDate) {
         String selection =
                 Events.CALENDAR_ID + " = " + calendarId + " AND "
-                        + Events.DELETED + " != 1 AND ((" + Events.DTSTART +
-                        " >= " + startDate + ") AND (" + Events.DTEND + " <= " + endDate + "))";
+                        + Events.DELETED + " != 1 AND ("
+                        + "(" + Events.DTSTART + " >= " + startDate + " AND " + Events.DTSTART + " <= " + endDate + ")" // 事件开始时间在查询范围内
+                        + " OR "
+                        + "(" + Events.RRULE + " IS NOT NULL AND " + Events.DTSTART + " <= " + endDate + ")" // 周期性事件，开始时间早于查询结束时间
+                        + ")";
         return getEvents(selection);
     }
 
@@ -152,39 +154,45 @@ public class CalendarOperations {
         ArrayList<CalendarEvent> calendarEvents = new ArrayList<>();
 
         Uri uri = Events.CONTENT_URI;
-        // String selection =
-        //        Events.CALENDAR_ID + " = " + calendarId + " AND " + Events.DELETED + " != 1";
-        // String[] selectionArgs = new String[]{"Chennai, Tamilnadu"};
         String eventsSortOrder = Events.DTSTART + " ASC";
 
+        // 查询事件
         Cursor cur = cr.query(uri, EVENT_PROJECTION, selection, null, eventsSortOrder);
 
         try {
             while (cur.moveToNext()) {
-                String eventId =
-                        cur.getLong(cur.getColumnIndex(CalendarContract.Instances._ID)) + "";
+                String eventId = cur.getLong(cur.getColumnIndex(Events._ID)) + "";
                 String title = cur.getString(cur.getColumnIndex(Events.TITLE));
                 String desc = cur.getString(cur.getColumnIndex(Events.DESCRIPTION));
-                String location = cur
-                        .getString(cur.getColumnIndex(Events.EVENT_LOCATION));
+                String location = cur.getString(cur.getColumnIndex(Events.EVENT_LOCATION));
                 String url = cur.getString(cur.getColumnIndex(Events.CUSTOM_APP_URI));
-                long startDate =
-                        cur.getLong(cur.getColumnIndex(Events.DTSTART));
+                long startDate = cur.getLong(cur.getColumnIndex(Events.DTSTART));
                 long endDate = cur.getLong(cur.getColumnIndex(Events.DTEND));
+                String rRule = cur.getString(cur.getColumnIndex(Events.RRULE)); // 获取重复规则
                 long duration = cur.getLong(cur.getColumnIndex(Events.DURATION));
                 boolean isAllDay = cur.getInt(cur.getColumnIndex(Events.ALL_DAY)) > 0;
                 boolean hasAlarm = cur.getInt(cur.getColumnIndex(Events.HAS_ALARM)) > 0;
-                CalendarEvent event = new CalendarEvent(eventId, title, desc, startDate, endDate,
-                        location,
-                        url,
-                        isAllDay, hasAlarm);
-                calendarEvents.add(event);
+
+                // 如果是周期性事件，动态计算实例
+                if (rRule != null && !rRule.isEmpty()) {
+                    List<CalendarEvent> recurringInstances = getRecurringEventInstances(
+                            eventId, startDate, endDate, rRule, title, desc, location, url, isAllDay, hasAlarm
+                    );
+                    calendarEvents.addAll(recurringInstances);
+                } else {
+                    // 非周期性事件，直接添加
+                    CalendarEvent event = new CalendarEvent(
+                            eventId, title, desc, startDate, endDate, location, url, isAllDay, hasAlarm
+                    );
+                    calendarEvents.add(event);
+                }
             }
         } catch (Exception e) {
             Log.e("XXX", e.getMessage());
         } finally {
             cur.close();
         }
+
         updateRemindersAndAttendees(calendarEvents);
         return calendarEvents;
     }
@@ -434,7 +442,57 @@ public class CalendarOperations {
         } finally {
             cur.close();
         }
+    }
 
+    private List<CalendarEvent> getRecurringEventInstances(
+            String eventId, long startDate, long endDate, String rRule,
+            String title, String desc, String location, String url,
+            boolean isAllDay, boolean hasAlarm) {
+        List<CalendarEvent> instances = new ArrayList<>();
+
+        // 使用 CalendarContract.Instances 查询周期性事件的实例
+        Uri uri = CalendarContract.Instances.CONTENT_URI;
+        ContentResolver cr = ctx.getContentResolver();
+
+        String[] projection = new String[]{
+                Instances.BEGIN,
+                Instances.END
+        };
+
+        String selection = Instances.EVENT_ID + " = ? AND "
+                + Instances.BEGIN + " >= ? AND "
+                + Instances.END + " <= ?";
+        String[] selectionArgs = new String[]{
+                eventId,
+                String.valueOf(startDate),
+                String.valueOf(endDate)
+        };
+
+        Cursor cur = cr.query(
+                ContentUris.withAppendedId(uri, startDate),
+                projection,
+                selection,
+                selectionArgs,
+                Instances.BEGIN + " ASC"
+        );
+
+        try {
+            while (cur.moveToNext()) {
+                long instanceStart = cur.getLong(cur.getColumnIndex(Instances.BEGIN));
+                long instanceEnd = cur.getLong(cur.getColumnIndex(Instances.END));
+
+                // 创建周期性事件的实例
+                CalendarEvent instance = new CalendarEvent(
+                        eventId, title, desc, instanceStart, instanceEnd, location, url, isAllDay, hasAlarm
+                );
+                instances.add(instance);
+            }
+        } catch (Exception e) {
+            Log.e("XXX", e.getMessage());
+        } finally {
+            cur.close();
+        }
+        return instances;
     }
 
     public void addReminder(String calendarId, String eventId, long minutes) {
