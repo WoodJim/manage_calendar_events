@@ -480,9 +480,10 @@ public class CalendarOperations {
                 Instances.END
         };
 
+        // 只筛选开始时间在查询范围内的事件
         String selection = Instances.EVENT_ID + " = ? AND "
                 + Instances.BEGIN + " >= ? AND "
-                + Instances.END + " <= ?";
+                + Instances.BEGIN + " <= ?";
         String[] selectionArgs = new String[]{
                 eventId,
                 String.valueOf(startDate),
