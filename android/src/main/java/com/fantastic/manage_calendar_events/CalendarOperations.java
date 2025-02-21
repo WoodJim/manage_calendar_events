@@ -2,12 +2,15 @@ package com.fantastic.manage_calendar_events;
 
 import android.Manifest.permission;
 import android.app.Activity;
-import android.content.Context;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.CalendarContract;
 import android.provider.CalendarContract.Calendars;
 import android.provider.CalendarContract.Events;
@@ -23,6 +26,8 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class CalendarOperations {
 
@@ -46,6 +51,8 @@ public class CalendarOperations {
 
     private Context ctx;
     private Activity activity;
+
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
 
     public CalendarOperations(Activity activity, Context ctx) {
         this.activity = activity; this.ctx = ctx;
@@ -178,7 +185,6 @@ public class CalendarOperations {
         } finally {
             cur.close();
         }
-
         updateRemindersAndAttendees(calendarEvents);
         return calendarEvents;
     }
@@ -254,8 +260,13 @@ public class CalendarOperations {
 
     private void updateRemindersAndAttendees(ArrayList<CalendarEvent> events) {
         for (CalendarEvent event : events) {
-            getReminders(event);
-            event.setAttendees(getAttendees(event.getEventId()));
+            executor.submit(() -> {
+                getReminders(event);
+                List<CalendarEvent. Attendee> attendees = getAttendees(event.getEventId());
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    event.setAttendees(attendees);
+                });
+            });
         }
     }
 
@@ -315,13 +326,10 @@ public class CalendarOperations {
         } finally {
             cur.close();
         }
-        ArrayList attendeeList = new ArrayList<>(attendees);
-        Collections.sort(attendeeList, new Comparator<CalendarEvent.Attendee>() {
-            @Override
-            public int compare(CalendarEvent.Attendee o1, CalendarEvent.Attendee o2) {
-                return o1.getEmailAddress().compareTo(o2.getEmailAddress());
-            }
-        });
+        ArrayList<CalendarEvent.Attendee> attendeeList = new ArrayList<>(attendees);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            Collections.sort(attendeeList, Comparator.comparing(CalendarEvent.Attendee::getEmailAddress));
+        }
         if (organiser != null && !attendeeList.isEmpty())
             attendeeList.add(0, organiser);
 
@@ -349,18 +357,24 @@ public class CalendarOperations {
         ContentValues[] valuesArray = new ContentValues[attendees.size()];
 
         for (int i = 0, attendeesSize = attendees.size(); i < attendeesSize; i++) {
-            CalendarEvent.Attendee attendee = attendees.get(i);
-            ContentValues values = new ContentValues();
-            values.put(CalendarContract.Attendees.EVENT_ID, eventId);
-            values.put(CalendarContract.Attendees.ATTENDEE_NAME, attendee.getName());
-            values.put(CalendarContract.Attendees.ATTENDEE_EMAIL, attendee.getEmailAddress());
-            values.put(CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-                    attendee.isOrganiser() ? CalendarContract.Attendees.RELATIONSHIP_ORGANIZER :
-                            CalendarContract.Attendees.RELATIONSHIP_ATTENDEE);
-
+            ContentValues values = getContentValues(eventId, attendees, i);
             valuesArray[i] = values;
         }
-        cr.bulkInsert(CalendarContract.Attendees.CONTENT_URI, valuesArray);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            cr.bulkInsert(CalendarContract.Attendees.CONTENT_URI, valuesArray);
+        });
+    }
+
+    private static ContentValues getContentValues(String eventId, List<CalendarEvent.Attendee> attendees, int i) {
+        CalendarEvent.Attendee attendee = attendees.get(i);
+        ContentValues values = new ContentValues();
+        values.put(CalendarContract.Attendees.EVENT_ID, eventId);
+        values.put(CalendarContract.Attendees.ATTENDEE_NAME, attendee.getName());
+        values.put(CalendarContract.Attendees.ATTENDEE_EMAIL, attendee.getEmailAddress());
+        values.put(CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
+                attendee.isOrganiser() ? CalendarContract.Attendees.RELATIONSHIP_ORGANIZER :
+                        CalendarContract.Attendees.RELATIONSHIP_ATTENDEE);
+        return values;
     }
 
     public int deleteAttendee(String eventId,
@@ -375,20 +389,16 @@ public class CalendarOperations {
                         + " AND " + CalendarContract.Attendees.ATTENDEE_EMAIL
                         + " = '" + attendee.getEmailAddress() + "'";
 
-        int updCount = ctx.getContentResolver().delete(uri, selection, null);
-        return updCount;
+        return ctx.getContentResolver().delete(uri, selection, null);
     }
 
-    private int deleteAllAttendees(String eventId) {
+    private void deleteAllAttendees(String eventId) {
         if (!hasPermissions()) {
             requestPermissions();
         }
-
         Uri uri = CalendarContract.Attendees.CONTENT_URI;
         String selection = CalendarContract.Attendees.EVENT_ID + " = " + eventId;
-
-        int updCount = ctx.getContentResolver().delete(uri, selection, null);
-        return updCount;
+        ctx.getContentResolver().delete(uri, selection, null);
     }
 
     private void getReminders(CalendarEvent event) {
@@ -415,7 +425,9 @@ public class CalendarOperations {
             while (cur.moveToNext()) {
                 long minutes = cur.getLong(cur.getColumnIndex(CalendarContract.Reminders.MINUTES));
                 Reminder reminder = new CalendarEvent.Reminder(minutes);
-                event.setReminder(reminder);
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    event.setReminder(reminder);
+                });
             }
         } catch (Exception e) {
             Log.e("XXX", e.getMessage());
