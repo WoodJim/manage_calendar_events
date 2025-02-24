@@ -124,9 +124,10 @@ class _EventListState extends State<EventList> {
 
   // ignore: unused_element
   Future<List<CalendarEvent>?> _fetchEventsByDateRange() async {
-    DateTime endDate =
-        DateTime.now().toUtc().add(Duration(hours: 23, minutes: 59));
-    DateTime startDate = endDate.subtract(Duration(days: 3));
+    final now = DateTime.now().toUtc();
+    DateTime startDate = now;
+    DateTime endDate = now.add(Duration(days: 2));
+
     return _myPlugin.getEventsByDateRange(
       calendarId: this.widget.calendarId,
       startDate: startDate,
